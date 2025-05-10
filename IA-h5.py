@@ -1,76 +1,40 @@
-import os
 import tensorflow as tf
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Conv2D, MaxPooling2D, Flatten, Dense, Dropout
-from tensorflow.keras.preprocessing.image import ImageDataGenerator
-import matplotlib.pyplot as plt
+import numpy as np
+import cv2
 
-# Configurações dos caminhos
-train_dir = r'your folder\name.keras'
-# Saída para o arquivo .keras
-output_model_path = r'your folder\name.keras'
+# Carrega o modelo treinado
+model = tf.keras.models.load_model('modelo_pessoa_fogo.h5')
 
-# Configurando o ImageDataGenerator para treinamento e validação
-train_datagen = ImageDataGenerator(rescale=1.0/255, validation_split=0.2)  # 20% para validação
+# Classes — ajuste conforme as pastas usadas no treinamento
+classes = ['fogo', 'pessoa']
 
-train_generator = train_datagen.flow_from_directory(
-    directory=train_dir,  # pasta pai que contém as subpastas 'fire' e 'nofire'
-    classes=['fire', 'nofire'],  # especifica as subpastas
-    target_size=(250, 250),
-    batch_size=32,
-    class_mode='binary',
-    subset='training'
-)
+# Inicializa a webcam (0 é a webcam padrão)
+cap = cv2.VideoCapture(0)
 
-validation_generator = train_datagen.flow_from_directory(
-    directory=train_dir,
-    classes=['fire', 'nofire'],
-    target_size=(250, 250),
-    batch_size=32,
-    class_mode='binary',
-    subset='validation'
-)
+while True:
+    ret, frame = cap.read()
+    if not ret:
+        break
 
-# Construindo o modelo de rede neural convolucional (CNN)
-model = Sequential([
-    Conv2D(32, (3, 3), activation='relu', input_shape=(250, 250, 3)),
-    MaxPooling2D(2, 2),
-    Conv2D(64, (3, 3), activation='relu'),
-    MaxPooling2D(2, 2),
-    Conv2D(128, (3, 3), activation='relu'),
-    MaxPooling2D(2, 2),
-    Flatten(),
-    Dense(128, activation='relu'),
-    Dropout(0.5),
-    Dense(1, activation='sigmoid')  # Saída para classificação binária (fogo/sim ou não)
-])
+    # Redimensiona o frame para o tamanho esperado pelo modelo
+    resized = cv2.resize(frame, (150, 150))
+    img_array = np.expand_dims(resized / 255.0, axis=0)
 
-model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
+    # Faz a previsão
+    prediction = model.predict(img_array)
+    class_index = np.argmax(prediction)
+    confidence = prediction[0][class_index] * 100
+    label = f"{classes[class_index]} ({confidence:.1f}%)"
 
-# Treinamento do modelo
-history = model.fit(
-    train_generator,
-    validation_data=validation_generator,
-    epochs=23,  # ajuste conforme necessário
-    steps_per_epoch=len(train_generator),
-    validation_steps=len(validation_generator)
-)
+    # Mostra o resultado no frame
+    cv2.putText(frame, label, (10, 30), cv2.FONT_HERSHEY_SIMPLEX,
+                1, (0, 255, 0), 2)
+    cv2.imshow('IA - Webcam', frame)
 
-# Salvando o modelo treinado em um arquivo .keras
-model.save(output_model_path)
-print(f"Modelo salvo em: {output_model_path}")
+    # Sai com 'q'
+    if cv2.waitKey(1) & 0xFF == ord('q'):
+        break
 
-# Gráficos de precisão e perda durante o treinamento
-plt.plot(history.history['accuracy'], label='Acurácia de Treinamento')
-plt.plot(history.history['val_accuracy'], label='Acurácia de Validação')
-plt.xlabel('Época')
-plt.ylabel('Acurácia')
-plt.legend()
-plt.show()
-
-plt.plot(history.history['loss'], label='Perda de Treinamento')
-plt.plot(history.history['val_loss'], label='Perda de Validação')
-plt.xlabel('Época')
-plt.ylabel('Perda')
-plt.legend()
-plt.show()
+# Libera a webcam e fecha a janela
+cap.release()
+cv2.destroyAllWindows()
